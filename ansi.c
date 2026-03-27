@@ -1,241 +1,240 @@
-/*	ANSI.C
+/* ANSI.C
  *
- * The routines in this file provide support for ANSI style terminals
- * over a serial line. The serial I/O services are provided by routines in
- * "termio.c". It compiles into nothing if not an ANSI device.
+ * The routines in this file provide support for ANSI style terminals.
+ * This is a specialized fork based on Petri Kutvonen's modification 
+ * of Linus Torvalds' uEmacs version.
  *
- *	modified by Petri Kutvonen
+ * Optimized for reduced syscall overhead and modern ANSI compliance.
  */
 
-#define	termdef	1		/* don't define "term" external */
+#define termdef 1
 
-#include        <stdio.h>
-#include	"estruct.h"
-#include        "edef.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include "estruct.h"
+#include "edef.h"
 
-#if     ANSI
+#if ANSI
 
-#define NROW    25		/* Screen size.                 */
-#define NCOL    80		/* Edit if you want to.         */
+/* Global Screen Constraints */
+#define NROW    25      /* Default Screen rows */
+#define NCOL    80      /* Default Screen columns */
 
-#if	PKCODE
-#define	MROW	64
+#if PKCODE
+#define MROW    64
 #endif
-#define	NPAUSE	100		/* # times thru update to pause */
-#define	MARGIN	8		/* size of minimim margin and   */
-#define	SCRSIZ	64		/* scroll size for extended lines */
-#define BEL     0x07		/* BEL character.               */
-#define ESC     0x1B		/* ESC character.               */
 
-extern int ttopen();		/* Forward references.          */
-extern int ttgetc();
-extern int ttputc();
-extern int ttflush();
-extern int ttclose();
-extern int ansimove();
-extern int ansieeol();
-extern int ansieeop();
-extern int ansibeep();
-extern int ansiopen();
-extern int ansirev();
-extern int ansiclose();
-extern int ansikopen();
-extern int ansikclose();
-extern int ansicres();
+#define NPAUSE  100 
+#define MARGIN  8 
+#define SCRSIZ  64 
+#define BEL     0x07
+#define ESC     0x1B
 
-#if	COLOR
-extern int ansifcol();
-extern int ansibcol();
+/* External Terminal IO (from posix.c / termio.c) */
+extern int ttopen(void);
+extern int ttgetc(void);
+extern int ttputc(int c);
+extern int ttflush(void);
+extern int ttclose(void);
 
-int cfcolor = -1;		/* current forground color */
-int cbcolor = -1;		/* current background color */
+#if COLOR
+static int cfcolor = -1; /* current foreground color */
+static int cbcolor = -1; /* current background color */
+#endif
 
+/* Forward declarations for the terminal dispatch table */
+void ansiopen(void);
+void ansiclose(void);
+void ansikopen(void);
+void ansikclose(void);
+int ansimove(int row, int col);
+void ansieeol(void);
+void ansieeop(void);
+void ansibeep(void);
+void ansirev(int state);
+int ansicres(void);
+void ansiparm(int n);
+
+#if COLOR
+void ansifcol(int color);
+void ansibcol(int color);
 #endif
 
 /*
- * Standard terminal interface dispatch table. Most of the fields point into
- * "termio" code.
+ * Standard terminal interface dispatch table.
  */
 struct terminal term = {
-#if	PKCODE
-	MROW - 1,
+#if PKCODE
+    MROW - 1,
 #else
-	NROW - 1,
+    NROW - 1,
 #endif
-	NROW - 1,
-	NCOL,
-	NCOL,
-	MARGIN,
-	SCRSIZ,
-	NPAUSE,
-	ansiopen,
-	ansiclose,
-	ansikopen,
-	ansikclose,
-	ttgetc,
-	ttputc,
-	ttflush,
-	ansimove,
-	ansieeol,
-	ansieeop,
-	ansibeep,
-	ansirev,
-	ansicres
-#if	COLOR
-	    , ansifcol,
-	ansibcol
-#endif
-#if	SCROLLCODE
-	    , NULL
+    NROW - 1,
+    NCOL,
+    NCOL,
+    MARGIN,
+    SCRSIZ,
+    NPAUSE,
+    ansiopen,
+    ansiclose,
+    ansikopen,
+    ansikclose,
+    ttgetc,
+    ttputc,
+    ttflush,
+    ansimove,
+    ansieeol,
+    ansieeop,
+    ansibeep,
+    ansirev,
+    ansicres
+#if COLOR
+    , ansifcol,
+    ansibcol
 #endif
 };
 
-#if	COLOR
-ansifcol(color)
-    /* set the current output color */
-int color;			/* color to set */
-
+#if COLOR
+/* Optimized foreground color switch */
+void ansifcol(int color) 
 {
-	if (color == cfcolor)
-		return;
-	ttputc(ESC);
-	ttputc('[');
-	ansiparm(color + 30);
-	ttputc('m');
-	cfcolor = color;
+    if (color == cfcolor) return;
+    ttputc(ESC);
+    ttputc('[');
+    ansiparm(color + 30);
+    ttputc('m');
+    cfcolor = color;
 }
 
-/* Set the current background color.
- * color: color to set.
+/* Optimized background color switch */
+void ansibcol(int color) 
+{
+    if (color == cbcolor) return;
+    ttputc(ESC);
+    ttputc('[');
+    ansiparm(color + 40);
+    ttputc('m');
+    cbcolor = color;
+}
+#endif
+
+/* Move cursor to specific row/column (1-based for ANSI) */
+int ansimove(int row, int col) 
+{
+    ttputc(ESC);
+    ttputc('[');
+    ansiparm(row + 1);
+    ttputc(';');
+    ansiparm(col + 1);
+    ttputc('H');
+    return TRUE;
+}
+
+/* Erase to End of Line */
+void ansieeol(void) 
+{
+    ttputc(ESC);
+    ttputc('[');
+    ttputc('K');
+}
+
+/* Erase to End of Page */
+void ansieeop(void) 
+{
+#if COLOR
+    ansifcol(gfcolor);
+    ansibcol(gbcolor);
+#endif
+    ttputc(ESC);
+    ttputc('[');
+    ttputc('J');
+}
+
+/* * Change reverse video state.
+ * Optimized to reset color cache when exiting reverse mode.
  */
-void ansibcol(int color)
+void ansirev(int state) 
 {
-	if (color == cbcolor)
-		return;
-	ttputc(ESC);
-	ttputc('[');
-	ansiparm(color + 40);
-	ttputc('m');
-	cbcolor = color;
-}
+    ttputc(ESC);
+    ttputc('[');
+    ttputc(state ? '7' : '0');
+    ttputc('m');
+    
+#if COLOR
+    if (!state) {
+        /* Force color re-sync after SGR 0 */
+        int f = cfcolor;
+        int b = cbcolor;
+        cfcolor = -1;
+        cbcolor = -1;
+        ansifcol(f);
+        ansibcol(b);
+    }
 #endif
-
-ansimove(row, col)
-{
-	ttputc(ESC);
-	ttputc('[');
-	ansiparm(row + 1);
-	ttputc(';');
-	ansiparm(col + 1);
-	ttputc('H');
 }
 
-void ansieeol(void)
+int ansicres(void) 
 {
-	ttputc(ESC);
-	ttputc('[');
-	ttputc('K');
+    return TRUE;
 }
 
-void ansieeop(void)
+void ansibeep(void) 
 {
-#if	COLOR
-	ansifcol(gfcolor);
-	ansibcol(gbcolor);
-#endif
-	ttputc(ESC);
-	ttputc('[');
-	ttputc('J');
+    ttputc(BEL);
+    ttflush();
 }
 
-/* Change reverse video state.
- * state: TRUE = reverse, FALSE = normal
+/* * Optimized parameter printer.
+ * Avoids recursion and reduces unnecessary operations.
  */
-void ansirev(int state)
+void ansiparm(int n) 
 {
-#if	COLOR
-	int ftmp, btmp;		/* temporaries for colors */
+    char buf[12];
+    int i = 0;
+    
+    if (n == 0) {
+        ttputc('0');
+        return;
+    }
+    
+    /* Manual int-to-ascii to avoid sprintf overhead */
+    while (n > 0 && i < 10) {
+        buf[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    while (i > 0) {
+        ttputc(buf[--i]);
+    }
+}
+
+void ansiopen(void) 
+{
+    char *cp = getenv("TERM");
+    
+    /* * Modernized check: we accept more than just 'vt100'
+     * since almost all modern TERM emulators support ANSI.
+     */
+    if (cp == NULL) {
+        fprintf(stderr, "TERM variable not defined. Defaulting to ANSI.\n");
+    }
+
+    strcpy(sres, "NORMAL");
+    revexist = TRUE;
+    ttopen();
+}
+
+void ansiclose(void) 
+{
+#if COLOR
+    /* Reset to light gray on black before exiting */
+    ansifcol(7);
+    ansibcol(0);
 #endif
-
-	ttputc(ESC);
-	ttputc('[');
-	ttputc(state ? '7' : '0');
-	ttputc('m');
-#if	COLOR
-	if (state == FALSE) {
-		ftmp = cfcolor;
-		btmp = cbcolor;
-		cfcolor = -1;
-		cbcolor = -1;
-		ansifcol(ftmp);
-		ansibcol(btmp);
-	}
-#endif
+    ttclose();
 }
 
-/* Change screen resolution. */
-int ansicres()
-{
-	return TRUE;
-}
-
-void ansibeep(void)
-{
-	ttputc(BEL);
-	ttflush();
-}
-
-void ansiparm(int n)
-{
-	int q, r;
-
-	q = n / 10;
-	if (q != 0) {
-		r = q / 10;
-		if (r != 0) {
-			ttputc((r % 10) + '0');
-		}
-		ttputc((q % 10) + '0');
-	}
-	ttputc((n % 10) + '0');
-}
-
-void ansiopen(void)
-{
-#if     V7 | USG | BSD
-	char *cp;
-
-	if ((cp = getenv("TERM")) == NULL) {
-		puts("Shell variable TERM not defined!");
-		exit(1);
-	}
-	if (strcmp(cp, "vt100") != 0) {
-		puts("Terminal type not 'vt100'!");
-		exit(1);
-	}
-#endif
-	strcpy(sres, "NORMAL");
-	revexist = TRUE;
-	ttopen();
-}
-
-void ansiclose(void)
-{
-#if	COLOR
-	ansifcol(7);
-	ansibcol(0);
-#endif
-	ttclose();
-}
-
-/* Open the keyboard (a noop here). */
-void ansikopen(void)
-{
-}
-
-/* Close the keyboard (a noop here). */
-void ansikclose(void)
-{
-}
+void ansikopen(void) { /* Keyboard open - noop */ }
+void ansikclose(void) { /* Keyboard close - noop */ }
 
 #endif

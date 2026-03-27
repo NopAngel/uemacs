@@ -2,7 +2,7 @@
 #define VERSION_H_
 
 #define PROGRAM_NAME "em"
-#define PROGRAM_NAME_LONG "uEmacs/Pk"
+#define PROGRAM_NAME_LONG "uEmacs/Pk (FORK)"
 
 #define	VERSION	"4.0.15"
 

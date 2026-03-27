@@ -180,3 +180,7 @@ Still one more release - or actually a small patch - which closes a
 potential security hole. Now we are at 4.0.15. This IS the FINAL release!
 
 September 25, 1996
+
+*-------------_____________________________________________-------------*
+WARNING: THIS IS A FORK. This code is NOT the official code from Linus Torvalds. The official code can be found at *https://github.com/torvalds/uemacs/*
+*-------------_____________________________________________-------------*
